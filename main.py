@@ -118,7 +118,7 @@ bird_pixels = None
 ok = False
 city_pixels = None
 city_index = None
-
+ok2 = False
 for i in range(nb_frames):
     if p.game_over():
         p.reset_game()
@@ -126,8 +126,12 @@ for i in range(nb_frames):
 
     img = p.getScreenGrayscale().transpose()
 
-    if i == 1 or ok == True:
+    if ok == True:
+        ok2 = True
         ok = False
+
+    if i == 1 or ok2 == True:
+        ok2 = False
         bincount_vector = np.bincount(img[0])
         background = np.argmax(bincount_vector)
         podium, podium_index = compute_podium(img)
@@ -160,6 +164,7 @@ for i in range(nb_frames):
 
 
     observation = p.getScreenRGB()
+    print()
     #action = agent.pickAction(reward, observation)
     nn = random.randint(0, 1)
     #nn = int(input("Insert action 0 sau 1"))

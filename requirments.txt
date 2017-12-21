@@ -2,3 +2,4 @@ gym[atari]
 gym
 pygame
 numpy
+tensorflow
