@@ -1,3 +1,36 @@
+import tensorflow as tf
+from keras import backend
+from keras import regularizers
+from keras.models import Sequential
+from keras.layers import Dense, Activation
+from keras.optimizers import SGD, Adam
+
+
+L1_constant = 0.01
+L2_constant = 0.01
+LEARNING_RATE = 1e-4
+DISCOUNT_FACTOR = 0.9
+INPUT_SIZE = 8
+
+
+def build_neural_network_model():
+    model = Sequential()
+    model.add(Dense(units=100, use_bias=True,
+                    kernel_initializer="random_uniform", bias_initializer="zeros",
+                    kernel_regularizer=regularizers.l2(L2_constant), bias_regularizer=regularizers.l1(L1_constant),
+                    activity_regularizer=regularizers.l1_l2(L1_constant, L2_constant),
+                    input_dim=INPUT_SIZE))
+    model.add(Activation("relu"))
+    model.add(Dense(units=2, use_bias=True,
+                    kernel_initializer="random_uniform", bias_initializer="zeros",
+                    kernel_regularizer=regularizers.l2(L2_constant), bias_regularizer=regularizers.l1(L1_constant),
+                    activity_regularizer=regularizers.l1_l2(L1_constant, L2_constant)
+                    ))
+    model.add(Activation("relu"))
+    adam = Adam(lr=LEARNING_RATE)
+    model.compile(loss="mse", optimizer=adam)
+    return model
+
 from keras.models import Sequential
 from keras.layers import Dense
 import time
@@ -13,19 +46,32 @@ from ple import PLE
 # model.add(Dense(units=64, activation="relu", input_dim=100))
 # model.add(Dense(units=64, activation="softmax"))
 
-game_steps = 1000
+game_steps = 50000
+
+q_dictionary = dict()
+reward_dictionary = dict()
 
 def compute_reward(state):
     if state['next_pipe_dist_to_player'] < 50:
         if state['player_y'] > state['next_pipe_bottom_y'] or state['player_y'] < state['next_pipe_top_y']:
             return -1000
+
+    if state['player_y'] <= 0:
+        return -1000
+
+    if state['player_y'] > 400:
+        return -1000
+
     grade = 0
-    cateta_opusa = state['next_pipe_bottom_y'] - (state['next_pipe_bottom_y'] - state['next_pipe_top_y']) / 2 - state['player_y']
-    cateta_alaturata = state['next_pipe_dist_to_player'] + 12
+    # cateta_opusa = state['next_pipe_bottom_y'] - (state['next_pipe_bottom_y'] - state['next_pipe_top_y']) / 2 - state['player_y']
+    # cateta_alaturata = state['next_pipe_dist_to_player'] + 12
+    cateta_opusa = state['next_pipe_bottom_y'] - (state['next_pipe_bottom_y'] - state['next_pipe_top_y']) / 2 - (state['player_y'] + 10)
+    cateta_alaturata = state['next_pipe_dist_to_player'] + 10
     arctan = np.arctan(cateta_opusa * 1.0 / cateta_alaturata)
     grade = (arctan * 180.0) / np.pi
-    print(grade)
-    return grade * -1 + 30
+    if grade > 0:
+        grade *= -1
+    return grade + 30
 
 
 def generate_next_state(current_action, current_state, action):
@@ -77,7 +123,11 @@ def process_state(state):
     # return np.array([state.values()])
     return np.array([state])
 
-if __name__ == '__main__':
+
+def main():
+    previous_action = 1
+    model = build_neural_network_model()
+
     game = FlappyBird(width=288, height=512, pipe_gap=100)
     env = PLE(game, fps=30, display_screen=True, state_preprocessor=process_state)
     env.init()
@@ -99,12 +149,76 @@ if __name__ == '__main__':
                                                            observation[0]["next_pipe_bottom_y"], observation[0]['next_next_pipe_dist_to_player'],
                                                            observation[0]["next_next_pipe_top_y"], observation[0]["next_next_pipe_bottom_y"])
         )
+
+        current_state = observation[0]
+
+        if str(current_state) not in q_dictionary:
+            q_dictionary[str(current_state)] = dict()
+        if 0 not in q_dictionary[str(current_state)]:
+            q_dictionary[str(current_state)][0] = 0
+        if 1 not in q_dictionary[str(current_state)]:
+            q_dictionary[str(current_state)][1] = 0
+
+        for action in [0, 1]:
+            returned_object = generate_next_state(previous_action, current_state, action)
+            if returned_object[0] == 0:
+                raise NameError("Error. {}".format(returned_object[1]))
+            else:
+                next_state = returned_object[1]
+                reward = returned_object[2]
+                if str(next_state) not in q_dictionary:
+                    q_dictionary[str(next_state)] = dict()
+                if 0 not in q_dictionary[str(next_state)]:
+                    q_dictionary[str(next_state)][0] = 0
+                if 1 not in q_dictionary[str(next_state)]:
+                    q_dictionary[str(next_state)][1] = 0
+
+                q_dictionary[str(current_state)][action] += LEARNING_RATE * (reward + DISCOUNT_FACTOR *
+                                                                        max(q_dictionary[str(next_state)][0],
+                                                                            q_dictionary[str(next_state)][1]) -
+                                                                        q_dictionary[str(current_state)][action])
+
+        action_to_take = 0
+        if (q_dictionary[str(current_state)][1] > q_dictionary[str(current_state)][0]):
+            action_to_take = 1
+
+        returned_object = generate_next_state(previous_action, current_state, action_to_take)
+        if returned_object[0] == 0:
+            raise NameError("Error. {}".format(returned_object[1]))
+        else:
+            reward_to_take = returned_object[2]
+            next_state = returned_object[1]
+
+        # print(list(next_state.values()))
+        print(reward_to_take, action_to_take)
+        vector = model.predict(np.matrix(list(next_state.values())))
+        a_star = 0
+        if vector[0][1] > vector[0][0]:
+            a_star = 1
+
+        target_to_learn = list()
+        target_to_learn.append(reward_to_take + DISCOUNT_FACTOR * vector[0][0])
+        target_to_learn.append(reward_to_take + DISCOUNT_FACTOR * vector[0][1])
+
+        model.train_on_batch(np.matrix(list(current_state.values())), np.matrix(target_to_learn))
+
         # action = agent.pickAction(reward, observation)
         #nn = random.randint(0, 1)
-        compute_reward(observation[0])
-        nn = int(input("Insert action 0 sau 1"))
-        reward = env.act(env.getActionSet()[nn])
-        print("Iteration {} - reward {}".format(i, reward))
+        # compute_reward(observation[0])
+        # nn = int(input("Insert action 0 sau 1"))
+        # reward = env.act(env.getActionSet()[nn])
+        env_reward = env.act(env.getActionSet()[action_to_take])
+        # if env_reward == 1:
+        #     action_to_take = 1
+        #     env.act(env.getActionSet()[action_to_take])
+        #     env.act(env.getActionSet()[action_to_take])
+        previous_action = action_to_take
         time.sleep(0.1)
 
 
+if __name__ == '__main__':
+    config = tf.ConfigProto()
+    config.gpu_options.allow_growth = True
+    session = tf.Session(config=config)
+    backend.set_session(session=session)
+    main()
