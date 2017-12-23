@@ -3,3 +3,4 @@ gym
 pygame
 numpy
 tensorflow
+h5py
