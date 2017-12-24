@@ -16,18 +16,12 @@ INPUT_SIZE = 8
 
 def build_neural_network_model():
     model = Sequential()
-    model.add(Dense(units=100, use_bias=True,
-                    kernel_initializer="random_uniform", bias_initializer="zeros",
-                    kernel_regularizer=regularizers.l2(L2_constant), bias_regularizer=regularizers.l1(L1_constant),
-                    activity_regularizer=regularizers.l1_l2(L1_constant, L2_constant),
-                    input_dim=INPUT_SIZE))
-    model.add(Activation("relu"))
+    model.add(Dense(units=80, use_bias=True,
+                    kernel_initializer="random_uniform", bias_initializer="zeros", input_dim=INPUT_SIZE))
+    model.add(Activation("softmax"))
     model.add(Dense(units=2, use_bias=True,
-                    kernel_initializer="random_uniform", bias_initializer="zeros",
-                    kernel_regularizer=regularizers.l2(L2_constant), bias_regularizer=regularizers.l1(L1_constant),
-                    activity_regularizer=regularizers.l1_l2(L1_constant, L2_constant)
-                    ))
-    model.add(Activation("relu"))
+                    kernel_initializer="random_uniform", bias_initializer="zeros"))
+    model.add(Activation("softmax"))
     adam = Adam(lr=LEARNING_RATE)
     model.compile(loss="mse", optimizer=adam)
     return model
@@ -51,6 +45,7 @@ game_steps = 50000
 
 q_dictionary = dict()
 reward_dictionary = dict()
+generated_states = list()
 
 def compute_reward(state, passed=0, old_y=0):
     if state['next_pipe_dist_to_player'] < 50:
@@ -155,11 +150,13 @@ def main_train(learning = True):
     passed = 0
     old_y=0
     for i in range(game_steps):
+        if i % 10000 == 0:
+            print("STEP {} / {}".format(i, game_steps))
         if i == game_steps - 1:
             print("Score: {}".format(final_score))
         if env.game_over():
             print("Final Score: {}".format(final_score))
-            time.sleep(5)
+            # time.sleep(5)
             final_score = 0
             env.reset_game()
 
@@ -210,45 +207,63 @@ def main_train(learning = True):
         if (q_dictionary[str(current_state)][1] > q_dictionary[str(current_state)][0]):
             action_to_take = 1
 
-        # returned_object = generate_next_state(previous_action, current_state, 0, passed, old_y)
-        # if returned_object[0] == 0:
-        #     raise NameError("Error. {}".format(returned_object[1]))
-        # else:
-        #     reward_to_take = returned_object[2]
-        #     next_state = returned_object[1]
-        #
-        # vector = model.predict(np.matrix(list(next_state.values())))
-        # target_to_learn = list()
-        # target_to_learn.append(reward_to_take + DISCOUNT_FACTOR * vector[0][0])
-        #
-        # returned_object = generate_next_state(previous_action, current_state, 1, passed, old_y)
-        # if returned_object[0] == 0:
-        #     raise NameError("Error. {}".format(returned_object[1]))
-        # else:
-        #     reward_to_take = returned_object[2]
-        #     next_state = returned_object[1]
-        # vector = model.predict(np.matrix(list(next_state.values())))
-        # target_to_learn.append(reward_to_take + DISCOUNT_FACTOR * vector[0][1])
-        # model.fit(np.matrix(list(current_state.values())), np.matrix(target_to_learn))
 
-        returned_object = generate_next_state(previous_action, current_state, action_to_take, passed, old_y)
+        # vector = model.predict([np.matrix(list(current_state.values()))])
+        # action_to_take = np.argmax(vector[0])
+        # print(vector[0][0], vector[0][1], action_to_take)
+        # q_dictionary[str(current_state)][0] = vector[0][0]
+        # q_dictionary[str(current_state)][1] = vector[0][1]
+
+
+        
+        returned_object = generate_next_state(previous_action, current_state, 0, passed, old_y)
         if returned_object[0] == 0:
             raise NameError("Error. {}".format(returned_object[1]))
         else:
             reward_to_take = returned_object[2]
             next_state = returned_object[1]
 
-        target_to_learn = [0, 0]
-        vector = model.predict_on_batch([np.matrix(list(next_state.values()))])
-        value_to_learn = (reward_to_take + DISCOUNT_FACTOR * vector[0][action_to_take])
-        if action_to_take == 0:
-            target_to_learn[action_to_take] = value_to_learn
-            target_to_learn[1] = q_dictionary[str(current_state)][1]
-        else:
-            target_to_learn[action_to_take] = value_to_learn
-            target_to_learn[0] = q_dictionary[str(current_state)][0]
+        vector = model.predict(np.matrix(list(next_state.values())))
+        target_to_learn = list()
+        target_to_learn.append(reward_to_take + DISCOUNT_FACTOR * vector[0][0])
 
-        model.train_on_batch([np.matrix(list(current_state.values()))], [np.matrix(target_to_learn)])
+        returned_object = generate_next_state(previous_action, current_state, 1, passed, old_y)
+        if returned_object[0] == 0:
+            raise NameError("Error. {}".format(returned_object[1]))
+        else:
+            reward_to_take = returned_object[2]
+            next_state = returned_object[1]
+        vector = model.predict(np.matrix(list(next_state.values())))
+        target_to_learn.append(reward_to_take + DISCOUNT_FACTOR * vector[0][1])
+
+
+
+        # model.fit(np.matrix(list(current_state.values())), np.matrix(target_to_learn))
+        
+        """
+        """
+
+        #
+        # returned_object = generate_next_state(previous_action, current_state, action_to_take, passed, old_y)
+        # if returned_object[0] == 0:
+        #     raise NameError("Error. {}".format(returned_object[1]))
+        # else:
+        #     reward_to_take = returned_object[2]
+        #     next_state = returned_object[1]
+        #
+        # target_to_learn = [0, 0]
+        # vector = model.predict(np.matrix(list(next_state.values())))
+        # value_to_learn = (reward_to_take + DISCOUNT_FACTOR * vector[0][action_to_take])
+        # if action_to_take == 0:
+        #     target_to_learn[action_to_take] = value_to_learn
+        #     target_to_learn[1] = q_dictionary[str(current_state)][1]
+        # else:
+        #     target_to_learn[action_to_take] = value_to_learn
+        #     target_to_learn[0] = q_dictionary[str(current_state)][0]
+
+        # target_to_learn = [q_dictionary[str(current_state)][0], q_dictionary[str(current_state)][1]]
+        # time.sleep(0.04)
+        model.fit(np.matrix(list(current_state.values())), np.matrix(target_to_learn))
 
         if observation[0]['next_pipe_dist_to_player'] - 4 < 0:
             passed = 4
@@ -269,13 +284,14 @@ def main_train(learning = True):
         previous_action = action_to_take
         if passed !=0:
             passed -= 1
+    print("Saving the model")
     model.save("model.h5", overwrite=True)
 
 
 def main_test():
     final_score = 0
     previous_action = 1
-    # model = build_neural_network_model()
+    model = build_neural_network_model()
     game = FlappyBird(width=288, height=512, pipe_gap=100)
     env = PLE(game, fps=30, display_screen=True, state_preprocessor=process_state)
     model = load_model("model.h5")
@@ -287,14 +303,14 @@ def main_test():
             print("Score: {}".format(final_score))
         if env.game_over():
             print("Final Score: {}".format(final_score))
-            time.sleep(5)
+            time.sleep(1)
             final_score = 0
             env.reset_game()
 
         observation = env.getGameState()
 
-        vector = model.predict_on_batch([np.matrix(list(observation[0].values()))])
-        a_star = np.argmax(vector)
+        vector = model.predict(np.matrix(list(observation[0].values())))
+        a_star = np.argmax(vector[0])
         print(vector[0][0], vector[0][1], a_star)
         time.sleep(0.05)
         env_reward = env.act(env.getActionSet()[a_star])
